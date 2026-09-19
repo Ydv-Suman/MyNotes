@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: sumanydv/mynotes-backend:latest
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/mynotes.db}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in docker-compose/.env}
+      PERMANENT_PDFS_DIR: /data/pdfs
+      TEMP_JOBS_DIR: /tmp/note-jobs
+      MIN_IMAGES_PER_JOB: ${MIN_IMAGES_PER_JOB:-10}
+      MAX_IMAGES_PER_JOB: ${MAX_IMAGES_PER_JOB:-50}
+      MAX_IMAGE_MB: ${MAX_IMAGE_MB:-25}
+      MAX_BATCH_MB: ${MAX_BATCH_MB:-500}
+    volumes:
+      - mynotes-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: sumanydv/mynotes-frontend:latest
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mynotes-data:
