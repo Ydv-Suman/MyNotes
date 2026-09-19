@@ -221,3 +221,4 @@ Use immutable version tags such as `v1`, `v2`, and `v3` rather than replacing `l
 
 MyNotes is currently designed as a private, single-user application. It does not include account registration or multi-user authorization. Add authentication and per-user ownership checks before exposing it as a public service.
 # MyNotes
+# MyNotes
