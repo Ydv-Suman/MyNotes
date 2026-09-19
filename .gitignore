@@ -14,3 +14,5 @@ dist/
 .coverage
 backend/storage/
 tmp/
+*.md
+*.pdf
