@@ -126,7 +126,7 @@ export default function ImageUploader() {
 
     setImages((current) => {
       const newItems: PreviewImage[] = validImageFiles.map((file, index) => ({
-        id: `${file.name}-${file.lastModified}-${index}-${crypto.randomUUID()}`,
+        id: `${file.name}-${file.lastModified}-${index}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`,
         file,
         url: URL.createObjectURL(file),
         sizeFormatted: formatBytes(file.size)
@@ -1108,7 +1108,8 @@ export default function ImageUploader() {
                           type="button"
                           className="btn-lib-delete"
                           onClick={() => handleDeleteLibraryItem(item.job_id)}
-                          title="Delete note"
+                          disabled={!(["UPLOADED", "COMPLETED", "FAILED", "CLEANED"].includes(item.status))}
+                          title={(["UPLOADED", "COMPLETED", "FAILED", "CLEANED"].includes(item.status)) ? "Delete note" : "Wait for processing to finish"}
                         >
                           ✕
                         </button>

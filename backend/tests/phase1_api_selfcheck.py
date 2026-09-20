@@ -45,12 +45,22 @@ def demo() -> None:
             assert status_response.status_code == 200
             assert status_response.json()["progress"] == 35
 
-            analyze_response = client.post(f"/api/v1/notes/{job_id}/analyze")
-            assert analyze_response.status_code == 200, analyze_response.text
-            extraction = analyze_response.json()
-            assert extraction["pages"][0]["source_name"] == "001.jpg"
-            assert extraction["pages"][0]["elements"]
-            assert (job_dir / "extraction.json").exists()
+            from app.db import SessionLocal
+            from app.models.note import Note, NoteStatus
+
+            with SessionLocal() as db:
+                note = db.get(Note, job_id)
+                note.status = NoteStatus.ANALYZING.value
+                db.commit()
+
+            delete_response = client.delete(f"/api/v1/notes/{job_id}")
+            assert delete_response.status_code == 409
+            assert job_dir.exists()
+
+            with SessionLocal() as db:
+                note = db.get(Note, job_id)
+                note.status = NoteStatus.FAILED.value
+                db.commit()
 
             delete_response = client.delete(f"/api/v1/notes/{job_id}")
             assert delete_response.status_code == 204

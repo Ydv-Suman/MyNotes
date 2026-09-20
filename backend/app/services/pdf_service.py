@@ -1,4 +1,5 @@
 import io
+import re
 from html import escape
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,50 @@ from app.utils.cleanup import job_temp_dir
 
 def pdf_text(value: Optional[str]) -> str:
     return escape(value or "")
+
+
+_FORMULA_SCRIPT = re.compile(r"([_^])(?:\{([^{}]+)\}|\(([^()]*)\)|([A-Za-z0-9]+))")
+_FORMULA_FRACTION = re.compile(r"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}")
+
+
+def pdf_formula_text(value: Optional[str]) -> str:
+    """Convert common OCR formula notation into ReportLab paragraph markup."""
+    text = value or ""
+    while _FORMULA_FRACTION.search(text):
+        text = _FORMULA_FRACTION.sub(r"(\1) ÷ (\2)", text)
+    for source, symbol in {
+        r"\sum": "∑",
+        r"\times": "×",
+        r"\cdot": "·",
+        r"\div": "÷",
+        r"\leq": "≤",
+        r"\geq": "≥",
+        r"\neq": "≠",
+        r"\left": "",
+        r"\right": "",
+    }.items():
+        text = text.replace(source, symbol)
+    text = escape(text).replace(" * ", " × ").replace(" / ", " ÷ ")
+
+    def script(match: re.Match[str]) -> str:
+        tag = "sub" if match.group(1) == "_" else "super"
+        content = match.group(2) or match.group(3) or match.group(4) or ""
+        return f"<{tag}>{content}</{tag}>"
+
+    return _FORMULA_SCRIPT.sub(script, text)
+
+
+def pdf_table_data(data: dict) -> tuple[list[str], list[list[str]]]:
+    headers = data.get("headers", [])
+    rows = data.get("rows", [])
+    if not isinstance(headers, list) or not isinstance(rows, list):
+        return [], []
+    clean_rows = [[str(cell) for cell in row] for row in rows if isinstance(row, list)]
+    width = max([len(headers), *(len(row) for row in clean_rows)], default=0)
+    if not width:
+        return [], []
+    clean_headers = [str(cell) for cell in headers[:width]] + [""] * (width - len(headers))
+    return clean_headers, [row[:width] + [""] * (width - len(row)) for row in clean_rows]
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -293,10 +338,44 @@ def render_pdf(reconstructed: ReconstructedDocument, style: str = "notebook") ->
                 if elem.text:
                     story.append(Paragraph(f"{num_str} &nbsp; {pdf_text(elem.text)}", styles["DocNumbered"]))
 
+            elif elem_type == "table":
+                numbered_counter = 1
+                headers, rows = pdf_table_data(elem.data)
+                if rows:
+                    if elem.text:
+                        story.append(Paragraph(pdf_text(elem.text), styles["DocSubtitle"]))
+                    has_headers = any(headers)
+                    table_rows = ([headers] if has_headers else []) + rows
+                    cell_rows = [
+                        [Paragraph(pdf_text(cell), styles["DocBody"]) for cell in row]
+                        for row in table_rows
+                    ]
+                    content_width = letter[0] - 2 * margin
+                    table = Table(
+                        cell_rows,
+                        colWidths=[content_width / len(table_rows[0])] * len(table_rows[0]),
+                        repeatRows=1 if has_headers else 0,
+                    )
+                    table_style = [
+                        ("GRID", (0, 0), (-1, -1), 0.5, border_color),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                    if has_headers:
+                        table_style.extend([
+                            ("BACKGROUND", (0, 0), (-1, 0), primary_color),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ])
+                    table.setStyle(TableStyle(table_style))
+                    story.append(table)
+
             elif elem_type == "formula":
                 numbered_counter = 1
                 if elem.text:
-                    formula_p = Paragraph(pdf_text(elem.text), styles["DocFormula"])
+                    formula_p = Paragraph(pdf_formula_text(elem.text), styles["DocFormula"])
                     table = Table(
                         [[formula_p]],
                         colWidths=[letter[0] - 2 * margin],

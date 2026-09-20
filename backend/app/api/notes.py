@@ -26,6 +26,14 @@ from app.utils.filename import sanitize_title
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 logger = logging.getLogger(__name__)
 ALLOWED_STYLES = {"notebook", "clean"}
+PROCESSING_STATUSES = {
+    NoteStatus.UPLOADING.value,
+    NoteStatus.PREPROCESSING.value,
+    NoteStatus.ANALYZING.value,
+    NoteStatus.RECONSTRUCTING.value,
+    NoteStatus.RENDERING.value,
+    NoteStatus.GENERATING_PDF.value,
+}
 
 
 def progress_for(status_value: str) -> int:
@@ -149,10 +157,13 @@ def analyze_note_job(job_id: str, db: Session = Depends(get_db)) -> ExtractionRe
         db.commit()
         return result
     except Exception as exc:
-        note.status = NoteStatus.FAILED.value
-        note.error_message = "Image analysis failed."
-        db.commit()
-        logger.exception("Image analysis failed for job %s", note.id)
+        db.rollback()
+        failed_note = db.get(Note, job_id)
+        if failed_note is not None:
+            failed_note.status = NoteStatus.FAILED.value
+            failed_note.error_message = "Image analysis failed."
+            db.commit()
+        logger.exception("Image analysis failed for job %s", job_id)
         raise HTTPException(status_code=500, detail="Image analysis failed.") from exc
 
 
@@ -210,10 +221,13 @@ def reconstruct_and_render_job(job_id: str, db: Session = Depends(get_db)) -> Re
             document=reconstructed,
         )
     except Exception as exc:
-        note.status = NoteStatus.FAILED.value
-        note.error_message = "PDF reconstruction failed."
-        db.commit()
-        logger.exception("PDF reconstruction failed for job %s", note.id)
+        db.rollback()
+        failed_note = db.get(Note, job_id)
+        if failed_note is not None:
+            failed_note.status = NoteStatus.FAILED.value
+            failed_note.error_message = "PDF reconstruction failed."
+            db.commit()
+        logger.exception("PDF reconstruction failed for job %s", job_id)
         raise HTTPException(status_code=500, detail="PDF reconstruction failed.") from exc
 
 
@@ -256,6 +270,8 @@ def delete_note_job(job_id: str, db: Session = Depends(get_db)) -> None:
     note = db.get(Note, job_id)
     if note is None:
         raise HTTPException(status_code=404, detail="Job not found.")
+    if note.status in PROCESSING_STATUSES:
+        raise HTTPException(status_code=409, detail="Wait for processing to finish before deleting this job.")
 
     delete_temporary_job_files(note.id)
     delete_pdf(note.id)

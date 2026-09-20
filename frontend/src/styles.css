@@ -1451,6 +1451,11 @@ h1 {
   color: var(--color-error-text);
 }
 
+.btn-lib-delete:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 /* Responsive adjustments */
 @media (max-width: 860px) {
   .app-shell {

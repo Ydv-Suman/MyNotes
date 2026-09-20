@@ -1,14 +1,14 @@
 import base64
-from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from typing import Optional
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from app.config import settings
 from app.schemas.document import DocumentElement, ExtractionResult, PageExtraction
@@ -73,7 +73,7 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
 
         prompt = (
             "Transcribe the lecture slide/notes in this image into structured JSON.\n"
-            "Identify the main slide title, level-1 bullet points, level-2 sub-bullets, and numbered items.\n"
+            "Identify the main slide title, bullets, numbered items, formulas, and tables.\n"
             "Return JSON matching:\n"
             "{\n"
             '  "main_title": "Slide Title",\n'
@@ -82,29 +82,42 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
             '    {"type": "sub_bullet", "text": "Level-2 sub-bullet text"},\n'
             '    {"type": "numbered", "text": "Numbered item", "num": 1},\n'
             '    {"type": "subtitle", "text": "Subtopic heading if present"},\n'
-            '    {"type": "paragraph", "text": "Body text"}\n'
+            '    {"type": "paragraph", "text": "Body text"},\n'
+            '    {"type": "formula", "text": "Exact formula using Unicode math symbols, _ for subscripts, '
+            '^ for superscripts, and / for division; do not use LaTeX commands"},\n'
+            '    {"type": "table", "text": "Optional table title", '
+            '"data": {"headers": ["Column 1", "Column 2"], "rows": [["value", "value"]]}}\n'
             "  ]\n"
             "}\n"
-            "Extract exact text and formulas. Do not return raw images or dummy descriptions.\n"
+            "Extract exact text and formulas. Preserve every visible table as a table element with headers and rows; "
+            "never flatten table cells into paragraphs. Do not return raw images or dummy descriptions.\n"
             "Ignore administrative metadata, especially near the bottom of the image: instructor/professor names, "
             "dates, course/class/section labels, semesters, terms, and similar slide footer text."
         )
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_url, "detail": "low"}},
+        retry_delays = (5, 10, 20, 30)
+        for attempt in range(len(retry_delays) + 1):
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
+                            ],
+                        }
                     ],
-                }
-            ],
-            response_format={"type": "json_object"},
-            max_tokens=1500,
-            timeout=25.0,
-        )
+                    response_format={"type": "json_object"},
+                    max_tokens=2500,
+                    timeout=25.0,
+                )
+                break
+            except RateLimitError:
+                if attempt == len(retry_delays):
+                    raise
+                time.sleep(retry_delays[attempt])
 
         raw_json = response.choices[0].message.content or "{}"
         parsed = json.loads(raw_json)
@@ -112,8 +125,14 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
         elements: list[DocumentElement] = []
         for elem_data in parsed.get("elements", []):
             elem_type = elem_data.get("type", "paragraph")
-            text = elem_data.get("text", "").strip()
-            if not text:
+            text = str(elem_data.get("text") or "").strip()
+            data = elem_data.get("data") if isinstance(elem_data.get("data"), dict) else {}
+            if elem_type == "table":
+                data = {
+                    "headers": data.get("headers", elem_data.get("headers", [])),
+                    "rows": data.get("rows", elem_data.get("rows", [])),
+                }
+            if not text and not (elem_type == "table" and data.get("rows")):
                 continue
 
             num = elem_data.get("num")
@@ -122,7 +141,7 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
                     type=elem_type,
                     text=text,
                     confidence=0.95,
-                    data={"num": num} if num is not None else {},
+                    data={"num": num} if num is not None else data,
                 )
             )
 
@@ -139,7 +158,7 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
             elements=elements,
         )
     except Exception as exc:
-        logger.warning(f"OpenAI extraction failed for page {image_index} ({exc}), using local Apple Vision OCR.")
+        logger.warning(f"OpenAI extraction failed for page {image_index} ({exc}), using local OCR.")
         return None
 
 
@@ -291,8 +310,8 @@ def extract_job_images(job_id: str) -> ExtractionResult:
                 return extracted
         return extract_single_page_local_ocr(img, idx)
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        pages = list(executor.map(process_page, enumerate(images, start=1)))
+    # Process sequentially to stay within API token limits and small EC2 memory budgets.
+    pages = [process_page(item) for item in enumerate(images, start=1)]
 
     if not any(page.elements for page in pages):
         raise RuntimeError("No note text could be extracted. Check image clarity or AI vision billing.")
