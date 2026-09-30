@@ -24,8 +24,12 @@ def demo() -> None:
         ]
 
         with TestClient(app) as client:
-            short_response = client.post("/api/v1/notes", files=files[:9])
-            assert short_response.status_code == 400
+            oversized_files = [
+                ("files", (f"page-{index:03d}.jpg", image.getvalue(), "image/jpeg"))
+                for index in range(101)
+            ]
+            oversized_response = client.post("/api/v1/notes", files=oversized_files)
+            assert oversized_response.status_code == 400
 
             response = client.post("/api/v1/notes", files=files, data={"style": "notebook"})
             assert response.status_code == 201, response.text

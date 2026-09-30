@@ -43,4 +43,5 @@ class ReconstructionResponse(BaseModel):
     page_count: int
     pdf_url: str
     download_url: str
+    docx_download_url: str
     document: ReconstructedDocument

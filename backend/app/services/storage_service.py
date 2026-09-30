@@ -19,12 +19,30 @@ def save_pdf(job_id: str, pdf_bytes: bytes) -> Path:
     return destination
 
 
+def get_docx_path(job_id: str) -> Path:
+    return ensure_storage_dir() / f"{job_id}.docx"
+
+
+def save_docx(job_id: str, docx_bytes: bytes) -> Path:
+    destination = get_docx_path(job_id)
+    destination.write_bytes(docx_bytes)
+    return destination
+
+
 def pdf_exists(job_id: str) -> bool:
     return get_pdf_path(job_id).is_file()
 
 
 def delete_pdf(job_id: str) -> bool:
     path = get_pdf_path(job_id)
+    if path.is_file():
+        path.unlink()
+        return True
+    return False
+
+
+def delete_docx(job_id: str) -> bool:
+    path = get_docx_path(job_id)
     if path.is_file():
         path.unlink()
         return True

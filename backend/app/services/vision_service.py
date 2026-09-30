@@ -89,8 +89,11 @@ def extract_single_page_openai(client: OpenAI, image_path: Path, image_index: in
             '"data": {"headers": ["Column 1", "Column 2"], "rows": [["value", "value"]]}}\n'
             "  ]\n"
             "}\n"
-            "Extract exact text and formulas. Preserve every visible table as a table element with headers and rows; "
-            "never flatten table cells into paragraphs. Do not return raw images or dummy descriptions.\n"
+            "Extract exact text and formulas. Any content arranged in aligned columns or a grid is one table element, "
+            "even when its cells contain bullets or numbered text. Put column labels in data.headers and group cells "
+            "by their visual rows in data.rows; never emit table headers or cells as separate elements. For example, "
+            "columns 'Instruction Type', 'Instruction Count', and 'Cycles per Instruction' with values X/500,000/3 "
+            "must be one table row, not bullets or numbered items. Do not return raw images or dummy descriptions.\n"
             "Ignore administrative metadata, especially near the bottom of the image: instructor/professor names, "
             "dates, course/class/section labels, semesters, terms, and similar slide footer text."
         )

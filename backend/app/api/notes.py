@@ -16,9 +16,10 @@ from app.schemas.note import (
     ReconstructionResponse,
 )
 from app.services.image_service import save_ordered_uploads, validate_uploads
+from app.services.docx_service import render_docx
 from app.services.pdf_service import render_pdf
 from app.services.reconstruction_service import reconstruct_document
-from app.services.storage_service import delete_pdf, get_pdf_path, pdf_exists, save_pdf
+from app.services.storage_service import delete_docx, delete_pdf, get_docx_path, get_pdf_path, pdf_exists, save_docx, save_pdf
 from app.services.vision_service import extract_job_images, extraction_path
 from app.utils.cleanup import delete_temporary_job_files
 from app.utils.filename import sanitize_title
@@ -152,7 +153,7 @@ def analyze_note_job(job_id: str, db: Session = Depends(get_db)) -> ExtractionRe
     try:
         note.status = NoteStatus.ANALYZING.value
         db.commit()
-        result = extract_job_images(note.id)
+        result = extract_job_images(job_id)
         note.status = NoteStatus.RECONSTRUCTING.value
         db.commit()
         return result
@@ -179,13 +180,15 @@ def reconstruct_and_render_job(job_id: str, db: Session = Depends(get_db)) -> Re
         raise HTTPException(status_code=400, detail="Run analysis before document reconstruction.")
 
     extraction = ExtractionResult.model_validate_json(ext_file.read_text(encoding="utf-8"))
+    note_title = note.title
+    note_style = note.style or "notebook"
 
     try:
         note.status = NoteStatus.RECONSTRUCTING.value
         db.commit()
 
         # Step 1: Hierarchical Document Reconstruction
-        reconstructed = reconstruct_document(job_id, extraction, fallback_title=note.title)
+        reconstructed = reconstruct_document(job_id, extraction, fallback_title=note_title)
         if reconstructed.title and reconstructed.title.lower() != "untitled notes":
             note.title = sanitize_title(reconstructed.title)
 
@@ -193,13 +196,15 @@ def reconstruct_and_render_job(job_id: str, db: Session = Depends(get_db)) -> Re
         note.status = NoteStatus.RENDERING.value
         db.commit()
 
-        pdf_bytes, page_count = render_pdf(reconstructed, style=note.style or "notebook")
+        pdf_bytes, page_count = render_pdf(reconstructed, style=note_style)
+        docx_bytes = render_docx(reconstructed)
 
         # Step 3: Permanent PDF Storage
         note.status = NoteStatus.GENERATING_PDF.value
         db.commit()
 
         pdf_dest = save_pdf(job_id, pdf_bytes)
+        save_docx(job_id, docx_bytes)
 
         # Step 4: Finalize note job in DB
         note.pdf_storage_key = str(pdf_dest)
@@ -218,6 +223,7 @@ def reconstruct_and_render_job(job_id: str, db: Session = Depends(get_db)) -> Re
             page_count=note.page_count or page_count,
             pdf_url=f"/api/v1/notes/{job_id}/pdf",
             download_url=f"/api/v1/notes/{job_id}/download",
+            docx_download_url=f"/api/v1/notes/{job_id}/docx",
             document=reconstructed,
         )
     except Exception as exc:
@@ -265,6 +271,23 @@ def download_note_pdf(job_id: str, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/{job_id}/docx")
+def download_note_docx(job_id: str, db: Session = Depends(get_db)):
+    note = db.get(Note, job_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    docx_file = get_docx_path(job_id)
+    if not docx_file.is_file():
+        raise HTTPException(status_code=404, detail="Generated DOCX not found.")
+
+    return Response(
+        content=docx_file.read_bytes(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{quote(note.title)}.docx"'},
+    )
+
+
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note_job(job_id: str, db: Session = Depends(get_db)) -> None:
     note = db.get(Note, job_id)
@@ -275,5 +298,6 @@ def delete_note_job(job_id: str, db: Session = Depends(get_db)) -> None:
 
     delete_temporary_job_files(note.id)
     delete_pdf(note.id)
+    delete_docx(note.id)
     db.delete(note)
     db.commit()

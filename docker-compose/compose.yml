@@ -9,8 +9,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in docker-compose/.env}
       PERMANENT_PDFS_DIR: /data/pdfs
       TEMP_JOBS_DIR: /tmp/note-jobs
-      MIN_IMAGES_PER_JOB: ${MIN_IMAGES_PER_JOB:-10}
-      MAX_IMAGES_PER_JOB: ${MAX_IMAGES_PER_JOB:-50}
+      MIN_IMAGES_PER_JOB: ${MIN_IMAGES_PER_JOB:-1}
+      MAX_IMAGES_PER_JOB: ${MAX_IMAGES_PER_JOB:-100}
       MAX_IMAGE_MB: ${MAX_IMAGE_MB:-25}
       MAX_BATCH_MB: ${MAX_BATCH_MB:-500}
     volumes:

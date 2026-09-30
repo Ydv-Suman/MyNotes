@@ -4,8 +4,8 @@ from app.services.pdf_service import pdf_formula_text, pdf_table_data
 
 
 def demo() -> None:
-    names = [f"page-{i}.jpg" for i in range(10)]
-    validate_image_batch(names, ["image/jpeg"] * 10, 10, 50)
+    names = ["page-1.jpg"]
+    validate_image_batch(names, ["image/jpeg"], 1, 100)
     assert ordered_image_name(1, "scan.jpeg", "image/jpeg") == "001.jpg"
     assert ordered_image_name(12, "scan.png", "image/png") == "012.png"
     assert sanitize_title(" Chapter 4: Devices? ") == "Chapter 4 Devices"
@@ -26,11 +26,11 @@ def demo() -> None:
     )
 
     try:
-        validate_image_batch(["one.jpg"], ["image/jpeg"], 10, 50)
+        validate_image_batch([f"page-{i}.jpg" for i in range(101)], ["image/jpeg"] * 101, 1, 100)
     except ValueError as exc:
-        assert "10-50" in str(exc)
+        assert "1-100" in str(exc)
     else:
-        raise AssertionError("short batch was accepted")
+        raise AssertionError("oversized batch was accepted")
 
 
 if __name__ == "__main__":

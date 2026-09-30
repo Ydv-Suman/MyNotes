@@ -48,6 +48,7 @@ export type ReconstructionResponse = {
   page_count: number;
   pdf_url: string;
   download_url: string;
+  docx_download_url: string;
   document: ReconstructedDocument;
 };
 

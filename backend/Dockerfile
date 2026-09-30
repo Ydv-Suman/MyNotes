@@ -5,10 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PERMANENT_PDFS_DIR=/data/pdfs
 WORKDIR /app
 COPY requirements.txt ./
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r requirements.txt \
+RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home --uid 10001 app \
     && mkdir -p /data/pdfs /tmp/note-jobs \
     && chown -R app:app /data /tmp/note-jobs

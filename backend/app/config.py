@@ -24,8 +24,8 @@ class Settings:
     storage_dir: Path = Path(environ.get("STORAGE_DIR", str(BASE_DIR / "storage")))
     permanent_pdfs_dir: Path = Path(environ.get("PERMANENT_PDFS_DIR", str(BASE_DIR / "storage" / "pdfs")))
     static_dir: Path = Path(environ.get("STATIC_DIR", str(BASE_DIR.parent / "frontend" / "dist")))
-    max_images: int = int(environ.get("MAX_IMAGES_PER_JOB", "50"))
-    min_images: int = int(environ.get("MIN_IMAGES_PER_JOB", "10"))
+    max_images: int = int(environ.get("MAX_IMAGES_PER_JOB", "100"))
+    min_images: int = int(environ.get("MIN_IMAGES_PER_JOB", "1"))
     max_file_bytes: int = int(environ.get("MAX_IMAGE_MB", "25")) * 1024 * 1024
     max_batch_bytes: int = int(environ.get("MAX_BATCH_MB", "500")) * 1024 * 1024
     vision_provider: str = environ.get("VISION_PROVIDER", "openai")

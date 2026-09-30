@@ -13,6 +13,7 @@ import {
   createNoteJob,
   deleteNoteJob,
   fetchNotesLibrary,
+  getDocxDownloadUrl,
   getPdfDownloadUrl,
   getPdfViewUrl,
   reconstructNoteJob
@@ -31,8 +32,8 @@ type PreviewImage = {
   sizeFormatted: string;
 };
 
-const MIN_IMAGES = 10;
-const MAX_IMAGES = 50;
+const MIN_IMAGES = 1;
+const MAX_IMAGES = 100;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -75,7 +76,7 @@ export default function ImageUploader() {
   imagesRef.current = images;
 
   const countStatus = useMemo(() => {
-    if (images.length === 0) return "Add 10–50 note pages";
+    if (images.length === 0) return "Add 1–100 note pages";
     if (images.length < MIN_IMAGES) return `${MIN_IMAGES - images.length} more needed (min ${MIN_IMAGES})`;
     if (images.length > MAX_IMAGES) return `${images.length - MAX_IMAGES} too many (max ${MAX_IMAGES})`;
     return "Ready to generate";
@@ -539,7 +540,7 @@ export default function ImageUploader() {
           className="btn-camera capture-launch"
           onClick={openCamera}
           disabled={images.length >= MAX_IMAGES || (currentStep !== "idle" && currentStep !== "completed")}
-          title={images.length >= MAX_IMAGES ? "Maximum 50 pages reached" : "Take a photo of your notes"}
+          title={images.length >= MAX_IMAGES ? "Maximum 100 pages reached" : "Take a photo of your notes"}
         >
           <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
             <path d="M14.5 4 16 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3l1.5-3z" />
@@ -549,7 +550,7 @@ export default function ImageUploader() {
           <span>Use your device’s camera to take a photo</span>
         </button>
         </div>
-        <span className="upload-requirement">10 to 50 pages required</span>
+        <span className="upload-requirement">1 to 100 pages required</span>
 
         {/* Controls & Batch Progress Bar */}
         <div className="action-bar">
@@ -768,6 +769,13 @@ export default function ImageUploader() {
                 </svg>
                 Download PDF
               </a>
+              <a
+                href={getDocxDownloadUrl(reconstruction.job_id)}
+                download
+                className="btn-download-pdf"
+              >
+                Download DOCX
+              </a>
             </div>
 
             {/* Document Structure Accordion */}
@@ -972,7 +980,7 @@ export default function ImageUploader() {
                 disabled={images.length >= MAX_IMAGES}
                 aria-label="Take photo"
               />
-              <span>{images.length >= MAX_IMAGES ? "Maximum 50 pages reached" : "Tap to capture a page"}</span>
+              <span>{images.length >= MAX_IMAGES ? "Maximum 100 pages reached" : "Tap to capture a page"}</span>
             </div>
           </div>
         </div>
@@ -1100,7 +1108,14 @@ export default function ImageUploader() {
                               download
                               className="btn-lib-action btn-lib-download"
                             >
-                              Download
+                              PDF
+                            </a>
+                            <a
+                              href={getDocxDownloadUrl(item.job_id)}
+                              download
+                              className="btn-lib-action btn-lib-download"
+                            >
+                              DOCX
                             </a>
                           </>
                         )}

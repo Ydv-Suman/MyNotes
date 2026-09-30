@@ -62,6 +62,10 @@ export function getPdfDownloadUrl(jobId: string): string {
   return `${API_BASE}/api/v1/notes/${jobId}/download`;
 }
 
+export function getDocxDownloadUrl(jobId: string): string {
+  return `${API_BASE}/api/v1/notes/${jobId}/docx`;
+}
+
 export async function deleteNoteJob(jobId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/v1/notes/${jobId}`, {
     method: "DELETE",
