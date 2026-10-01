@@ -41,6 +41,30 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function createThumbnailUrl(file: File): Promise<string> {
+  const sourceUrl = URL.createObjectURL(file);
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          resolve(sourceUrl);
+          return;
+        }
+        URL.revokeObjectURL(sourceUrl);
+        resolve(URL.createObjectURL(blob));
+      }, "image/jpeg", 0.78);
+    };
+    image.onerror = () => resolve(sourceUrl);
+    image.src = sourceUrl;
+  });
+}
+
 export default function ImageUploader() {
   const [images, setImages] = useState<PreviewImage[]>([]);
   const [style, setStyle] = useState("notebook");
@@ -76,7 +100,7 @@ export default function ImageUploader() {
   imagesRef.current = images;
 
   const countStatus = useMemo(() => {
-    if (images.length === 0) return "Add 1–100 note pages";
+    if (images.length === 0) return `Add ${MIN_IMAGES}–${MAX_IMAGES} note pages`;
     if (images.length < MIN_IMAGES) return `${MIN_IMAGES - images.length} more needed (min ${MIN_IMAGES})`;
     if (images.length > MAX_IMAGES) return `${images.length - MAX_IMAGES} too many (max ${MAX_IMAGES})`;
     return "Ready to generate";
@@ -104,7 +128,7 @@ export default function ImageUploader() {
   }, [loadLibrary]);
 
   // Append new files safely with preview URLs
-  const handleIncomingFiles = useCallback((incoming: FileList | File[]) => {
+  const handleIncomingFiles = useCallback(async (incoming: FileList | File[]) => {
     const rawFiles = Array.from(incoming);
     const validImageFiles = rawFiles.filter((file) => {
       const isImgType = file.type.startsWith("image/");
@@ -112,28 +136,38 @@ export default function ImageUploader() {
       return isImgType || isImgExt;
     });
 
-    if (validImageFiles.length < rawFiles.length) {
+    const availableSlots = Math.max(0, MAX_IMAGES - imagesRef.current.length);
+    const acceptedFiles = validImageFiles.slice(0, availableSlots);
+
+    if (availableSlots === 0) {
+      setError(`Maximum ${MAX_IMAGES} pages reached.`);
+      return;
+    }
+    if (validImageFiles.length > availableSlots) {
+      setError(`Only the first ${availableSlots} images were added. Maximum ${MAX_IMAGES} pages.`);
+    } else if (validImageFiles.length < rawFiles.length) {
       setError("Some unsupported files were skipped. Only JPG, PNG, WEBP, and HEIC are supported.");
     } else {
       setError("");
     }
 
-    if (validImageFiles.length === 0) return;
+    if (acceptedFiles.length === 0) return;
 
     setJob(null);
     setExtraction(null);
     setReconstruction(null);
     setCurrentStep("idle");
 
-    setImages((current) => {
-      const newItems: PreviewImage[] = validImageFiles.map((file, index) => ({
-        id: `${file.name}-${file.lastModified}-${index}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`,
+    const newItems: PreviewImage[] = [];
+    for (const [index, file] of acceptedFiles.entries()) {
+      newItems.push({
+        id: `${file.name}-${file.lastModified}-${index}-${Date.now()}-${Math.random()}`,
         file,
-        url: URL.createObjectURL(file),
+        url: await createThumbnailUrl(file),
         sizeFormatted: formatBytes(file.size)
-      }));
-      return [...current, ...newItems];
-    });
+      });
+    }
+    setImages((current) => [...current, ...newItems]);
   }, []);
 
   // System clipboard paste support (Cmd+V / Ctrl+V)
@@ -540,7 +574,7 @@ export default function ImageUploader() {
           className="btn-camera capture-launch"
           onClick={openCamera}
           disabled={images.length >= MAX_IMAGES || (currentStep !== "idle" && currentStep !== "completed")}
-          title={images.length >= MAX_IMAGES ? "Maximum 100 pages reached" : "Take a photo of your notes"}
+          title={images.length >= MAX_IMAGES ? `Maximum ${MAX_IMAGES} pages reached` : "Take a photo of your notes"}
         >
           <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
             <path d="M14.5 4 16 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3l1.5-3z" />
@@ -550,7 +584,7 @@ export default function ImageUploader() {
           <span>Use your device’s camera to take a photo</span>
         </button>
         </div>
-        <span className="upload-requirement">1 to 100 pages required</span>
+        <span className="upload-requirement">{MIN_IMAGES} to {MAX_IMAGES} pages required</span>
 
         {/* Controls & Batch Progress Bar */}
         <div className="action-bar">
@@ -980,7 +1014,7 @@ export default function ImageUploader() {
                 disabled={images.length >= MAX_IMAGES}
                 aria-label="Take photo"
               />
-              <span>{images.length >= MAX_IMAGES ? "Maximum 100 pages reached" : "Tap to capture a page"}</span>
+              <span>{images.length >= MAX_IMAGES ? `Maximum ${MAX_IMAGES} pages reached` : "Tap to capture a page"}</span>
             </div>
           </div>
         </div>

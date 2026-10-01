@@ -3,7 +3,7 @@ import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import desc
+from sqlalchemy import delete, desc, update
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -144,17 +144,23 @@ def get_note_job(job_id: str, db: Session = Depends(get_db)) -> NoteStatusRespon
 
 @router.post("/{job_id}/analyze", response_model=ExtractionResult)
 def analyze_note_job(job_id: str, db: Session = Depends(get_db)) -> ExtractionResult:
-    note = db.get(Note, job_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    if note.status == NoteStatus.FAILED.value:
+    claimed = db.execute(
+        update(Note)
+        .where(Note.id == job_id, Note.status != NoteStatus.FAILED.value)
+        .values(status=NoteStatus.ANALYZING.value)
+    ).rowcount
+    if not claimed:
+        db.rollback()
+        if db.get(Note, job_id) is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
         raise HTTPException(status_code=409, detail="Failed jobs cannot be analyzed.")
+    db.commit()
 
     try:
-        note.status = NoteStatus.ANALYZING.value
-        db.commit()
         result = extract_job_images(job_id)
-        note.status = NoteStatus.RECONSTRUCTING.value
+        db.execute(
+            update(Note).where(Note.id == job_id).values(status=NoteStatus.RECONSTRUCTING.value)
+        )
         db.commit()
         return result
     except Exception as exc:
@@ -290,14 +296,15 @@ def download_note_docx(job_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note_job(job_id: str, db: Session = Depends(get_db)) -> None:
-    note = db.get(Note, job_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="Job not found.")
-    if note.status in PROCESSING_STATUSES:
+    deleted = db.execute(
+        delete(Note).where(Note.id == job_id, Note.status.not_in(PROCESSING_STATUSES))
+    ).rowcount
+    if not deleted:
+        db.rollback()
+        if db.get(Note, job_id) is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
         raise HTTPException(status_code=409, detail="Wait for processing to finish before deleting this job.")
-
-    delete_temporary_job_files(note.id)
-    delete_pdf(note.id)
-    delete_docx(note.id)
-    db.delete(note)
     db.commit()
+    delete_temporary_job_files(job_id)
+    delete_pdf(job_id)
+    delete_docx(job_id)
